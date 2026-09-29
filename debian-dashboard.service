@@ -1,0 +1,14 @@
+[Unit]
+Description=Collector data dashboard sumber daya Debian
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/debian-os-dashboard/collector.py
+Restart=on-failure
+# Collector hanya membaca /proc, jadi tidak perlu root.
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
