@@ -1,1 +1,422 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor Sumber Daya Debian</title>
+<style>
+  :root {
+    --kertas: #eceff2;
+    --panel: #ffffff;
+    --tinta: #1a2430;
+    --tinta-lembut: #5b6673;
+    --garis: #d5dae0;
+    --debian: #a80030;
+    --debian-muda: #f3d9e0;
+    --ok: #12766a;
+    --ok-muda: #d3ebe7;
+    --waspada: #b7791f;
+    --bahaya: #c0392b;
+    --cache: #9fb3c8;
+    --font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "DejaVu Sans Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-tema="terang"]) {
+      --kertas: #141a21; --panel: #1c242d; --tinta: #e6ebf0; --tinta-lembut: #8f9ba8;
+      --garis: #2e3945; --debian: #ff5c86; --debian-muda: #3a1f2a;
+      --ok: #4fc3b3; --ok-muda: #1d3a37; --waspada: #e0a23a; --bahaya: #ff7a6b; --cache: #4b6178;
+    }
+  }
+  :root[data-tema="gelap"] {
+    --kertas: #141a21; --panel: #1c242d; --tinta: #e6ebf0; --tinta-lembut: #8f9ba8;
+    --garis: #2e3945; --debian: #ff5c86; --debian-muda: #3a1f2a;
+    --ok: #4fc3b3; --ok-muda: #1d3a37; --waspada: #e0a23a; --bahaya: #ff7a6b; --cache: #4b6178;
+  }
 
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: 1rem; }
+  body {
+    margin: 0; background: var(--kertas); color: var(--tinta);
+    font-family: var(--font); font-size: 15px; line-height: 1.45;
+  }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  h1, h2 { margin: 0; font-weight: 600; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--debian); outline-offset: 2px; }
+
+  /* ---------- kepala ---------- */
+  header {
+    display: flex; flex-wrap: wrap; gap: 1rem 2rem; align-items: center; justify-content: space-between;
+    padding: 1rem clamp(1rem, 3vw, 2rem); background: var(--panel); border-bottom: 3px solid var(--debian);
+  }
+  header h1 { font-size: 1.25rem; letter-spacing: -.01em; }
+  header .host { color: var(--tinta-lembut); font-size: .9rem; margin-top: .15rem; }
+  .meta { display: flex; flex-wrap: wrap; gap: .5rem 1.75rem; align-items: center; font-size: .9rem; }
+  .meta dt { color: var(--tinta-lembut); font-size: .8rem; }
+  .meta dd { margin: 0; font-family: var(--mono); }
+  .meta div { min-width: 0; }
+  .status { display: inline-flex; align-items: center; gap: .5rem; padding: .35rem .8rem; border-radius: 999px;
+            background: var(--ok-muda); color: var(--ok); font-weight: 600; font-size: .85rem; }
+  .status::before { content: ""; width: .55rem; height: .55rem; border-radius: 50%; background: currentColor; }
+  .status.mati { background: var(--debian-muda); color: var(--debian); }
+  #tema { border: 1px solid var(--garis); background: none; border-radius: 6px; padding: .3rem .6rem; cursor: pointer; }
+
+  /* ---------- susunan ---------- */
+  main { padding: 1.25rem clamp(1rem, 3vw, 2rem) 3rem; display: grid; gap: 1.25rem;
+         grid-template-columns: repeat(12, minmax(0, 1fr)); max-width: 1400px; margin: 0 auto; }
+  section { background: var(--panel); border: 1px solid var(--garis); border-radius: 10px; padding: 1.1rem 1.25rem; min-width: 0; }
+  .cpu { grid-column: span 7; } .memori { grid-column: span 5; }
+  .disk { grid-column: span 5; } .io { grid-column: span 7; } .proses { grid-column: span 12; }
+  @media (max-width: 960px) { .cpu, .memori, .disk, .io { grid-column: span 12; } }
+  section h2 { font-size: 1rem; margin-bottom: .2rem; }
+  .sub { color: var(--tinta-lembut); font-size: .85rem; margin: 0 0 .9rem; overflow-wrap: anywhere; }
+  .baris-judul { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  .besar { font-family: var(--mono); font-size: 2.4rem; font-weight: 600; line-height: 1; letter-spacing: -.03em; }
+  .besar small { font-size: 1rem; color: var(--tinta-lembut); font-weight: 400; }
+
+  /* ---------- grafik ---------- */
+  svg.garis { width: 100%; height: 130px; display: block; }
+  svg.garis .area { fill: var(--debian-muda); }
+  svg.garis .jalur { fill: none; stroke: var(--debian); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  svg.garis .kisi { stroke: var(--garis); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 3 4; }
+  .sumbu { display: flex; justify-content: space-between; color: var(--tinta-lembut); font-size: .75rem; margin-top: .2rem; }
+
+  .core { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: .5rem .9rem; margin-top: 1rem; }
+  .core .label { display: flex; justify-content: space-between; font-size: .8rem; color: var(--tinta-lembut); }
+  .load { display: flex; gap: 1.5rem; margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--garis); }
+  .load b { display: block; font-family: var(--mono); font-size: 1.1rem; font-weight: 600; }
+  .load span { color: var(--tinta-lembut); font-size: .8rem; }
+
+  .batang { height: 8px; background: var(--kertas); border-radius: 4px; overflow: hidden; }
+  .batang i { display: block; height: 100%; background: var(--ok); border-radius: 4px; transition: width .6s ease; }
+  .batang i.waspada { background: var(--waspada); } .batang i.bahaya { background: var(--bahaya); }
+
+  /* ---------- memori: batang komposisi ---------- */
+  .komposisi { display: flex; height: 44px; border-radius: 8px; overflow: hidden; background: var(--kertas); margin: .4rem 0 .8rem; }
+  .komposisi div { transition: flex-basis .6s ease; min-width: 0; }
+  .k-pakai { background: var(--debian); } .k-cache { background: var(--cache); } .k-bebas { background: transparent; }
+  .legenda { display: grid; gap: .45rem; }
+  .legenda div { display: flex; align-items: center; gap: .6rem; font-size: .9rem; }
+  .legenda .kotak { width: .8rem; height: .8rem; border-radius: 3px; flex: none; border: 1px solid var(--garis); }
+  .legenda .nilai { margin-left: auto; font-family: var(--mono); }
+  .swap { margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--garis); }
+  .swap .label { display: flex; justify-content: space-between; font-size: .85rem; margin-bottom: .35rem; }
+
+  /* ---------- disk ---------- */
+  .partisi + .partisi { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--garis); }
+  .partisi .atas { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .4rem; flex-wrap: wrap; }
+  .partisi .dev { font-family: var(--mono); font-size: .9rem; overflow-wrap: anywhere; }
+  .partisi .info { color: var(--tinta-lembut); font-size: .8rem; margin-top: .3rem; }
+
+  /* ---------- I/O ---------- */
+  .io-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem 1.5rem; }
+  @media (max-width: 560px) { .io-grid { grid-template-columns: 1fr; } }
+  .io-item .nama { color: var(--tinta-lembut); font-size: .85rem; }
+  .io-item .kec { font-family: var(--mono); font-size: 1.35rem; font-weight: 600; margin: .1rem 0 .3rem; }
+  .io-item svg.garis { height: 56px; }
+  .io-item svg.garis .jalur { stroke: var(--ok); stroke-width: 1.75; }
+  .io-item svg.garis .area { fill: var(--ok-muda); }
+
+  /* ---------- tabel proses ---------- */
+  .ringkas { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .9rem; }
+  .ringkas span { background: var(--kertas); border-radius: 6px; padding: .2rem .6rem; font-size: .82rem; }
+  .ringkas b { font-family: var(--mono); }
+  .tabel-bungkus { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; min-width: 620px; }
+  th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid var(--garis); white-space: nowrap; }
+  th { font-weight: 600; color: var(--tinta-lembut); font-size: .8rem; padding: 0; }
+  th button { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; padding: .5rem .7rem; }
+  th button:hover { color: var(--tinta); }
+  th button:focus-visible { outline: 2px solid var(--debian); outline-offset: -2px; }
+  th[aria-sort] { color: var(--debian); }
+  th[aria-sort="ascending"] button::after { content: " ▲"; }
+  th[aria-sort="descending"] button::after { content: " ▼"; }
+  td.r, th.r button { text-align: right; } td.r { font-family: var(--mono); }
+  td.nama { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  .st { font-size: .78rem; padding: .1rem .5rem; border-radius: 4px; background: var(--kertas); }
+  .st.Running { background: var(--ok-muda); color: var(--ok); }
+  .st.Zombie, .st.Dead { background: var(--debian-muda); color: var(--debian); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Monitor Sumber Daya Debian</h1>
+    <div class="host num" id="host">menunggu data…</div>
+  </div>
+  <dl class="meta">
+    <div><dt>Kernel</dt><dd id="kernel">-</dd></div>
+    <div><dt>Arsitektur</dt><dd id="arsitektur">-</dd></div>
+    <div><dt>Uptime</dt><dd id="uptime">-</dd></div>
+    <div><dt>Data terakhir</dt><dd id="terakhir">-</dd></div>
+    <div><span class="status mati" id="status" role="status">Menunggu</span></div>
+    <div><button id="tema" type="button" aria-label="Ganti tema terang atau gelap">Tema</button></div>
+  </dl>
+</header>
+
+<main>
+  <section class="cpu" aria-labelledby="h-cpu">
+    <div class="baris-judul">
+      <div>
+        <h2 id="h-cpu">Prosesor</h2>
+        <p class="sub" id="cpu-model">-</p>
+      </div>
+      <div class="besar"><span id="cpu-total">0</span><small>%</small></div>
+    </div>
+    <svg class="garis" id="cpu-grafik" viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Riwayat pemakaian CPU"></svg>
+    <div class="sumbu"><span>2 menit lalu</span><span>sekarang</span></div>
+    <div class="core" id="cpu-core"></div>
+    <div class="load">
+      <div><b id="load1">-</b><span>load 1 menit</span></div>
+      <div><b id="load5">-</b><span>load 5 menit</span></div>
+      <div><b id="load15">-</b><span>load 15 menit</span></div>
+    </div>
+  </section>
+
+  <section class="memori" aria-labelledby="h-mem">
+    <div class="baris-judul">
+      <div>
+        <h2 id="h-mem">Memori (RAM)</h2>
+        <p class="sub"><span id="mem-total">-</span> total, <span id="mem-tersedia">-</span> tersedia</p>
+      </div>
+      <div class="besar"><span id="mem-persen">0</span><small>%</small></div>
+    </div>
+    <div class="komposisi" id="mem-bar" role="img" aria-label="Komposisi penggunaan memori">
+      <div class="k-pakai" id="k-pakai"></div>
+      <div class="k-cache" id="k-cache"></div>
+      <div class="k-bebas" id="k-bebas"></div>
+    </div>
+    <div class="legenda">
+      <div><span class="kotak k-pakai"></span>Dipakai aplikasi<span class="nilai" id="l-pakai">-</span></div>
+      <div><span class="kotak k-cache"></span>Buffer dan cache (bisa dilepas)<span class="nilai" id="l-cache">-</span></div>
+      <div><span class="kotak"></span>Kosong<span class="nilai" id="l-bebas">-</span></div>
+    </div>
+    <div class="swap">
+      <div class="label"><span>Swap</span><span class="num" id="swap-teks">-</span></div>
+      <div class="batang"><i id="swap-bar" style="width:0"></i></div>
+    </div>
+  </section>
+
+  <section class="disk" aria-labelledby="h-disk">
+    <h2 id="h-disk">Hard disk</h2>
+    <p class="sub">Pemakaian tiap partisi yang terpasang</p>
+    <div id="disk-daftar"></div>
+  </section>
+
+  <section class="io" aria-labelledby="h-io">
+    <h2 id="h-io">Input / Output</h2>
+    <p class="sub">Kecepatan baca dan tulis, dihitung dari selisih dua pembacaan</p>
+    <div class="io-grid" id="io-grid"></div>
+  </section>
+
+  <section class="proses" aria-labelledby="h-proses">
+    <h2 id="h-proses">Proses</h2>
+    <p class="sub">15 proses teratas. Klik judul kolom untuk mengurutkan.</p>
+    <div class="ringkas" id="proses-ringkas"></div>
+    <div class="tabel-bungkus">
+      <table>
+        <thead><tr id="tabel-kepala"></tr></thead>
+        <tbody id="tabel-isi"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+const URL_DATA = "data.json";
+const INTERVAL_MS = 2000;
+const TITIK = 60;                        // jumlah titik riwayat grafik (60 x 2 dtk = 2 menit)
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* ---------- pemformat angka ---------- */
+function byte(n) {
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(n >= 100 || i === 0 ? 0 : 1) + " " + u[i];
+}
+const perDetik = (n) => byte(n) + "/s";
+function durasi(dtk) {
+  const h = Math.floor(dtk / 86400), j = Math.floor(dtk % 86400 / 3600), m = Math.floor(dtk % 3600 / 60);
+  return (h ? h + " hari " : "") + j + " jam " + m + " mnt";
+}
+const kelas = (p) => (p >= 90 ? "bahaya" : p >= 75 ? "waspada" : "");
+
+/* ---------- grafik garis (SVG) ---------- */
+const riwayat = { cpu: [], diskBaca: [], diskTulis: [], netRx: [], netTx: [] };
+function tambah(arr, v) { arr.push(v); if (arr.length > TITIK) arr.shift(); }
+
+function gambarGaris(svg, data, maks) {
+  const w = 300, h = 100;
+  const atas = maks || Math.max(...data, 1);
+  const x = (i) => (TITIK - data.length + i) / (TITIK - 1) * w;
+  const y = (v) => h - 3 - (v / atas) * (h - 6);
+  const titik = data.map((v, i) => x(i).toFixed(1) + "," + y(v).toFixed(1));
+  const kisi = [25, 50, 75].map((p) => `<line class="kisi" x1="0" x2="${w}" y1="${h - p}" y2="${h - p}"/>`).join("");
+  svg.innerHTML = kisi + (data.length > 1
+    ? `<polygon class="area" points="${x(0)},${h} ${titik.join(" ")} ${x(data.length - 1)},${h}"/>` +
+      `<polyline class="jalur" points="${titik.join(" ")}"/>` : "");
+}
+
+/* ---------- render per modul ---------- */
+function renderCpu(c) {
+  $("cpu-model").textContent = `${c.model} (${c.core} core)`;
+  $("cpu-total").textContent = c.total.toFixed(1);
+  tambah(riwayat.cpu, c.total);
+  gambarGaris($("cpu-grafik"), riwayat.cpu, 100);
+  $("cpu-core").innerHTML = c.per_core.map((p, i) =>
+    `<div><div class="label"><span>Core ${i}</span><span class="num">${p.toFixed(0)}%</span></div>
+     <div class="batang"><i class="${kelas(p)}" style="width:${p}%"></i></div></div>`).join("");
+  $("load1").textContent = c.load[0].toFixed(2);
+  $("load5").textContent = c.load[1].toFixed(2);
+  $("load15").textContent = c.load[2].toFixed(2);
+}
+
+function renderMemori(m) {
+  const persen = m.terpakai / m.total * 100;
+  $("mem-persen").textContent = persen.toFixed(0);
+  $("mem-total").textContent = byte(m.total);
+  $("mem-tersedia").textContent = byte(m.tersedia);
+  $("k-pakai").style.flexBasis = persen + "%";
+  $("k-cache").style.flexBasis = (m.cache / m.total * 100) + "%";
+  $("k-bebas").style.flexBasis = (m.bebas / m.total * 100) + "%";
+  $("l-pakai").textContent = byte(m.terpakai);
+  $("l-cache").textContent = byte(m.cache);
+  $("l-bebas").textContent = byte(m.bebas);
+  if (m.swap_total > 0) {
+    const sp = m.swap_terpakai / m.swap_total * 100;
+    $("swap-teks").textContent = `${byte(m.swap_terpakai)} dari ${byte(m.swap_total)}`;
+    $("swap-bar").style.width = sp + "%";
+    $("swap-bar").className = kelas(sp);
+  } else {
+    $("swap-teks").textContent = "tidak aktif";
+    $("swap-bar").style.width = "0";
+  }
+}
+
+function renderDisk(daftar) {
+  $("disk-daftar").innerHTML = daftar.map((d) => {
+    const p = d.terpakai / d.total * 100;
+    return `<div class="partisi">
+      <div class="atas"><span class="dev">${esc(d.dev)}</span><span class="num">${p.toFixed(0)}%</span></div>
+      <div class="batang"><i class="${kelas(p)}" style="width:${p}%"></i></div>
+      <div class="info">dipasang di <span class="num">${esc(d.mount)}</span>, ${esc(d.fs)}, ${byte(d.terpakai)} dipakai dari ${byte(d.total)}, sisa ${byte(d.bebas)}</div>
+    </div>`;
+  }).join("") || "<p class='sub'>Tidak ada partisi yang terbaca.</p>";
+}
+
+const IO_ITEM = [
+  { kunci: "diskBaca", sumber: "disk_baca", nama: "Disk: baca" },
+  { kunci: "diskTulis", sumber: "disk_tulis", nama: "Disk: tulis" },
+  { kunci: "netRx", sumber: "net_rx", nama: "Jaringan: terima" },
+  { kunci: "netTx", sumber: "net_tx", nama: "Jaringan: kirim" },
+];
+function renderIO(io) {
+  if (!$("io-grid").children.length) {
+    $("io-grid").innerHTML = IO_ITEM.map((it) =>
+      `<div class="io-item"><div class="nama">${it.nama}</div>
+       <div class="kec" id="kec-${it.kunci}">-</div>
+       <svg class="garis" id="g-${it.kunci}" viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Riwayat ${it.nama}"></svg></div>`).join("");
+  }
+  IO_ITEM.forEach((it) => {
+    tambah(riwayat[it.kunci], io[it.sumber]);
+    $("kec-" + it.kunci).textContent = perDetik(io[it.sumber]);
+    gambarGaris($("g-" + it.kunci), riwayat[it.kunci]);
+  });
+}
+
+/* ---------- tabel proses (bisa diurutkan) ---------- */
+const KOLOM = [
+  { k: "pid", judul: "PID", r: true }, { k: "nama", judul: "Nama" }, { k: "user", judul: "User" },
+  { k: "status", judul: "Status" }, { k: "cpu_persen", judul: "CPU %", r: true },
+  { k: "rss", judul: "Memori", r: true }, { k: "mem_persen", judul: "Mem %", r: true },
+  { k: "threads", judul: "Thread", r: true },
+];
+let urut = { k: "cpu_persen", arah: -1 };
+let dataProses = [];
+
+function bangunKepala() {
+  $("tabel-kepala").innerHTML = KOLOM.map((c) =>
+    `<th class="${c.r ? "r" : ""}" data-k="${c.k}"><button type="button">${c.judul}</button></th>`).join("");
+  $("tabel-kepala").addEventListener("click", (e) => {
+    const th = e.target.closest("th"); if (!th) return;
+    urut = { k: th.dataset.k, arah: urut.k === th.dataset.k ? -urut.arah : -1 };
+    renderProses();
+  });
+}
+
+function renderProses(p) {
+  if (p) {
+    dataProses = p.teratas;
+    $("proses-ringkas").innerHTML = `<span>Total <b>${p.total}</b></span>` +
+      Object.entries(p.status).map(([s, n]) => `<span>${esc(s)} <b>${n}</b></span>`).join("");
+  }
+  [...$("tabel-kepala").children].forEach((th) => {
+    if (th.dataset.k === urut.k) th.setAttribute("aria-sort", urut.arah < 0 ? "descending" : "ascending");
+    else th.removeAttribute("aria-sort");
+  });
+  const s = [...dataProses].sort((a, b) => {
+    const x = a[urut.k], y = b[urut.k];
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * urut.arah;
+  });
+  $("tabel-isi").innerHTML = s.map((r) =>
+    `<tr><td class="r">${r.pid}</td><td class="nama" title="${esc(r.nama)}">${esc(r.nama)}</td><td>${esc(r.user)}</td>
+     <td><span class="st ${esc(r.status.split(" ")[0])}">${esc(r.status)}</span></td>
+     <td class="r">${r.cpu_persen.toFixed(1)}</td><td class="r">${byte(r.rss)}</td>
+     <td class="r">${r.mem_persen.toFixed(1)}</td><td class="r">${r.threads}</td></tr>`).join("");
+}
+
+/* ---------- ambil data ---------- */
+let waktuTerakhir = 0;
+let lokalTerakhir = Date.now();           // jam browser saat data baru diterima
+function setStatus(hidup, teks) {
+  const el = $("status");
+  el.textContent = teks;
+  el.classList.toggle("mati", !hidup);
+}
+
+async function ambil() {
+  try {
+    const res = await fetch(URL_DATA + "?t=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const d = await res.json();
+    if (d.waktu === waktuTerakhir) return cekBasi();          // collector belum menulis data baru
+    waktuTerakhir = d.waktu;
+    lokalTerakhir = Date.now();
+
+    $("host").textContent = d.sistem.host;
+    $("kernel").textContent = d.sistem.kernel;
+    $("arsitektur").textContent = d.sistem.arsitektur;
+    $("uptime").textContent = durasi(d.sistem.uptime);
+    $("terakhir").textContent = new Date(d.waktu * 1000).toLocaleTimeString("id-ID");
+    renderCpu(d.cpu); renderMemori(d.memori); renderDisk(d.disk); renderIO(d.io); renderProses(d.proses);
+    setStatus(true, "Langsung");
+  } catch (err) {
+    setStatus(false, "Data tidak terbaca. Jalankan collector.py");
+  }
+}
+function cekBasi() {
+  if (Date.now() - lokalTerakhir > INTERVAL_MS * 4) setStatus(false, "Collector berhenti");
+}
+
+/* ---------- tema ---------- */
+$("tema").addEventListener("click", () => {
+  const gelapSistem = matchMedia("(prefers-color-scheme: dark)").matches;
+  const sekarang = document.documentElement.dataset.tema || (gelapSistem ? "gelap" : "terang");
+  document.documentElement.dataset.tema = sekarang === "gelap" ? "terang" : "gelap";
+});
+
+bangunKepala();
+ambil();
+setInterval(ambil, INTERVAL_MS);
+</script>
+</body>
+</html>
